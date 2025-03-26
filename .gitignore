@@ -694,3 +694,6 @@ asn1_*_asn1.c
 /tools/krb5-gssapi.pc
 /tools/krb5.pc
 /tools/krb5-config
+
+result
+result-*
