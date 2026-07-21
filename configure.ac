@@ -196,6 +196,22 @@ AM_CONDITIONAL([HAVE_CAPNG], [test "$with_capng" != "no"])
 AC_SUBST([CAPNG_CFLAGS])
 AC_SUBST([CAPNG_LIBS])
 
+dnl libsystemd
+AC_ARG_WITH([systemd],
+  AC_HELP_STRING([--with-systemd], [use libsystemd for sd_notify service notifications @<:@default=check@:>@]),
+  [],
+  [with_systemd=check])
+if test "$with_systemd" != "no"; then
+  PKG_CHECK_MODULES([SYSTEMD], [libsystemd],
+		    [with_systemd=yes],[with_systemd=no])
+fi
+if test "$with_systemd" = "yes"; then
+  AC_DEFINE_UNQUOTED([HAVE_SYSTEMD], 1, [whether libsystemd is available for sd_notify])
+fi
+AM_CONDITIONAL([HAVE_SYSTEMD], [test "$with_systemd" != "no"])
+AC_SUBST([SYSTEMD_CFLAGS])
+AC_SUBST([SYSTEMD_LIBS])
+
 dnl mitdb
 AC_ARG_WITH([mitdb],
   AC_HELP_STRING([--with-mitdb], [Path to MIT Kerberos DB include header and shared object]),

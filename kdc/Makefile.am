@@ -198,12 +198,12 @@ LDADD = $(top_builddir)/lib/hdb/libhdb.la \
 	$(LIB_roken) \
 	$(DB3LIB) $(DB1LIB) $(LMDBLIB) $(NDBMLIB)
 
-kdc_LDADD = libkdc.la $(LDADD) $(LIB_pidfile) $(CAPNG_LIBS)
+kdc_LDADD = libkdc.la $(LDADD) $(LIB_pidfile) $(CAPNG_LIBS) $(SYSTEMD_LIBS)
 
 if FRAMEWORK_SECURITY
 kdc_LDFLAGS = -framework SystemConfiguration -framework CoreFoundation
 endif
-kdc_CFLAGS = $(CAPNG_CFLAGS)
+kdc_CFLAGS = $(CAPNG_CFLAGS) $(SYSTEMD_CFLAGS)
 
 kdc_replay_LDADD = libkdc.la $(LDADD) $(LIB_pidfile)
 kdc_tester_LDADD = libkdc.la $(LDADD) $(LIB_pidfile) $(LIB_heimbase)
