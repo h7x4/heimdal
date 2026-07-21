@@ -22,6 +22,7 @@
   pam,
   libmicrohttpd,
   cjson,
+  systemdLibs,
 
   CoreFoundation,
   Security,
@@ -43,6 +44,7 @@
   withOpenLDAPAsHDBModule ? false,
   withOpenSSL ? true,
   withSQLite3 ? true,
+  withSystemd ? lib.meta.availableOn stdenv.hostPlatform systemdLibs,
 }:
 
 assert lib.assertMsg (withOpenLDAPAsHDBModule -> withOpenLDAP) ''
@@ -89,7 +91,8 @@ stdenv.mkDerivation {
     ++ lib.optionals (withMicroHTTPD) [ libmicrohttpd ]
     ++ lib.optionals (withOpenLDAP) [ openldap ]
     ++ lib.optionals (withOpenSSL) [ openssl ]
-    ++ lib.optionals (withSQLite3) [ sqlite ];
+    ++ lib.optionals (withSQLite3) [ sqlite ]
+    ++ lib.optionals (withSystemd) [ systemdLibs ];
 
   doCheck = true;
   nativeCheckInputs = [
@@ -125,12 +128,10 @@ stdenv.mkDerivation {
     ]
     ++ lib.optionals (withSQLite3) [
       "--with-sqlite3=${sqlite.dev}"
+    ]
+    ++ lib.optionals (withSystemd) [
+      "--with-systemd"
     ];
-
-  patches = [
-    # Proposed @ https://github.com/heimdal/heimdal/pull/1264
-    ./0001-Define-HAVE_DB_185_H.patch
-  ];
 
   # (check-ldap) slapd resides within ${openldap}/libexec,
   #              which is not part of $PATH by default.

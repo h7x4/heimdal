@@ -31,6 +31,7 @@ pkgs.mkShell {
     openldap
     openssl
     sqlite
+    systemd
   ];
 
   env = {

@@ -28,7 +28,6 @@
         fileset = lib.fileset.difference ./. (lib.fileset.unions [
           ./.github
           ./.gitignore
-          ./.zed
           ./flake.nix
           ./flake.lock
           ./nix

@@ -10,6 +10,10 @@ let
   cfg = config.services.kerberos_server;
   package = config.security.krb5.package;
 
+  socketActivation = cfg.enableSocketActivation;
+
+  serviceWantedBy = [ "kerberos-server.target" ];
+
   aclConfigs = lib.pipe cfg.settings.realms [
     (mapAttrs (
       name:
@@ -69,11 +73,14 @@ in
     systemd.services.kadmind = {
       description = "Kerberos Administration Daemon";
       partOf = [ "kerberos-server.target" ];
-      wantedBy = [ "kerberos-server.target" ];
+      wantedBy = serviceWantedBy;
       serviceConfig = {
+        Type = "notify";
         ExecStart = "${package}/libexec/kadmind --config-file=/etc/heimdal-kdc/kdc.conf";
         Slice = "system-kerberos-server.slice";
         StateDirectory = "heimdal";
+
+        PrivateNetwork = socketActivation;
       };
       restartTriggers = [ kdcConfFile ];
     };
@@ -81,11 +88,13 @@ in
     systemd.services.kdc = {
       description = "Key Distribution Center daemon";
       partOf = [ "kerberos-server.target" ];
-      wantedBy = [ "kerberos-server.target" ];
+      wantedBy = serviceWantedBy;
       serviceConfig = {
+        Type = "notify";
         ExecStart = "${package}/libexec/kdc --config-file=/etc/heimdal-kdc/kdc.conf";
         Slice = "system-kerberos-server.slice";
         StateDirectory = "heimdal";
+        PrivateNetwork = socketActivation;
       };
       restartTriggers = [ kdcConfFile ];
     };
@@ -93,13 +102,63 @@ in
     systemd.services.kpasswdd = {
       description = "Kerberos Password Changing daemon";
       partOf = [ "kerberos-server.target" ];
-      wantedBy = [ "kerberos-server.target" ];
+      wantedBy = serviceWantedBy;
       serviceConfig = {
+        Type = "notify";
         ExecStart = "${package}/libexec/kpasswdd";
         Slice = "system-kerberos-server.slice";
         StateDirectory = "heimdal";
+        PrivateNetwork = socketActivation;
       };
       restartTriggers = [ kdcConfFile ];
+    };
+
+    systemd.sockets = lib.mkIf socketActivation {
+      kadmind = {
+        description = "Kerberos Administration Daemon socket";
+        partOf = [ "kerberos-server.target" ];
+        wantedBy = [
+          "sockets.target"
+          "kerberos-server.target"
+        ];
+        socketConfig = {
+          ListenStream = 749;
+          FileDescriptorName = "kadmind";
+          Accept = false;
+          Slice = "system-kerberos-server.slice";
+        };
+      };
+
+      kdc = {
+        description = "Key Distribution Center daemon socket";
+        partOf = [ "kerberos-server.target" ];
+        wantedBy = [
+          "sockets.target"
+          "kerberos-server.target"
+        ];
+        socketConfig = {
+          ListenStream = 88;
+          ListenDatagram = 88;
+          FileDescriptorName = "kdc";
+          Accept = false;
+          Slice = "system-kerberos-server.slice";
+        };
+      };
+
+      kpasswdd = {
+        description = "Kerberos Password Changing daemon socket";
+        partOf = [ "kerberos-server.target" ];
+        wantedBy = [
+          "sockets.target"
+          "kerberos-server.target"
+        ];
+        socketConfig = {
+          ListenDatagram = 464;
+          FileDescriptorName = "kpasswdd";
+          Accept = false;
+          Slice = "system-kerberos-server.slice";
+        };
+      };
     };
   };
 }

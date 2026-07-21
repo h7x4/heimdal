@@ -84,6 +84,10 @@
               };
             };
           };
+
+          specialisation.socketActivation.configuration = {
+            services.kerberos_server.enableSocketActivation = true;
+          };
         };
 
       client =
@@ -289,32 +293,58 @@
           if not "host/client.foo.bar" in ktutil_list:
             exit(1)
 
-        with subtest("Client: kinit alice"):
-          kinit(client, "alice", alice_krb_pw)
+        def kerberos_auth_flow(mode):
+          global alice_krb_pw, alice_old_krb_pw
 
-        with subtest("Client: kpasswd alice"):
-          alice_old_krb_pw = alice_krb_pw
-          alice_krb_pw = random_password()
-          output = client.succeed(f"${lib.getExe kpasswd} {alice_old_krb_pw} {alice_krb_pw}")
-          assert "Success : Password changed" in output
+          with subtest(f"[{mode}] Client: kinit alice"):
+            kinit(client, "alice", alice_krb_pw)
 
-        with subtest("Client: kadmin get bob"):
-          output = kadmin(client, "get bob")
-          print(output)
-          assert "Principal: bob@FOO.BAR" in output
+          with subtest(f"[{mode}] Client: kpasswd alice"):
+            alice_old_krb_pw = alice_krb_pw
+            alice_krb_pw = random_password()
+            output = client.succeed(f"${lib.getExe kpasswd} {alice_old_krb_pw} {alice_krb_pw}")
+            assert "Success : Password changed" in output
 
-        with subtest("Server: kinit alice"):
-          kinit(server, "alice", alice_krb_pw)
+          with subtest(f"[{mode}] Client: kadmin get bob"):
+            output = kadmin(client, "get bob")
+            assert "Principal: bob@FOO.BAR" in output
 
-        with subtest("Server: kpasswd alice"):
-          alice_old_krb_pw = alice_krb_pw
-          alice_krb_pw = random_password()
-          output = server.succeed(f"${lib.getExe kpasswd} {alice_old_krb_pw} {alice_krb_pw}")
-          assert "Success : Password changed" in output
+          with subtest(f"[{mode}] Server: kinit alice"):
+            kinit(server, "alice", alice_krb_pw)
 
-        with subtest("Server: kadmin get bob"):
-          output = kadmin(server, "get bob")
-          assert "Principal: bob@FOO.BAR" in output
+          with subtest(f"[{mode}] Server: kpasswd alice"):
+            alice_old_krb_pw = alice_krb_pw
+            alice_krb_pw = random_password()
+            output = server.succeed(f"${lib.getExe kpasswd} {alice_old_krb_pw} {alice_krb_pw}")
+            assert "Success : Password changed" in output
+
+          with subtest(f"[{mode}] Server: kadmin get bob"):
+            output = kadmin(server, "get bob")
+            assert "Principal: bob@FOO.BAR" in output
+
+        # First run against the default, self-binding daemons.
+        kerberos_auth_flow("bind")
+
+        with subtest("Server: daemons publish an sd_notify status line"):
+          for svc in ["kdc", "kadmind", "kpasswdd"]:
+              status = server.succeed(f"systemctl show {svc}.service -p StatusText")
+              assert "Serving" in status, \
+                  f"{svc}.service has no sd_notify status: {status}"
+
+        server.succeed("systemctl stop kadmind.service kdc.service kpasswdd.service")
+        server.succeed(
+          "/run/current-system/specialisation/socketActivation/bin/switch-to-configuration test"
+        )
+        for unit in ["kadmind.socket", "kdc.socket", "kpasswdd.socket"]:
+            server.wait_for_unit(unit)
+
+        kerberos_auth_flow("socket-activation")
+
+        with subtest("Server: daemons are wired to their activation sockets"):
+          for svc in ["kdc", "kadmind", "kpasswdd"]:
+              triggered = server.succeed(f"systemctl show {svc}.service -p TriggeredBy")
+              assert f"{svc}.socket" in triggered, \
+                  f"{svc}.service not triggered by {svc}.socket: {triggered}"
       '';
 
     meta.maintainers = pkgs.heimdal.meta.maintainers;

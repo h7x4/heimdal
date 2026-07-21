@@ -30,6 +30,10 @@ in
     services.kerberos_server = {
       enable = lib.mkEnableOption "the kerberos authentication server";
 
+      enableSocketActivation = lib.mkEnableOption ''
+        Systemd socket activation for the kerberos daemons.
+      '';
+
       settings = mkOption {
         type = format.type;
         description = ''
@@ -59,7 +63,7 @@ in
 
     systemd.slices.system-kerberos-server = { };
     systemd.targets.kerberos-server = {
-      wantedBy = [ "multi-user.target" ];
+      wantedBy = lib.mkIf cfg.enableSocketActivation [ "multi-user.target" ];
     };
   };
 
