@@ -41,6 +41,11 @@ RCSID("$Id$");
 #include <hdb.h>
 #include <kadm5/private.h>
 #include <kadm5/kadm5_err.h>
+#ifdef HAVE_SYSTEMD
+#include <systemd/sd-daemon.h>
+/* how often (seconds) to refresh the sd_notify STATUS line while idle */
+#define STATUS_INTERVAL 30
+#endif
 
 static krb5_context context;
 static krb5_log_facility *log_facility;
@@ -745,37 +750,69 @@ doit(krb5_keytab keytab, int port)
 
     roken_detach_finish(NULL, daemon_child);
 
-    while (exit_flag == 0) {
-	krb5_ssize_t retx;
-	fd_set fdset = real_fdset;
+    {
+	struct timeval *tmoutp = NULL;
+#ifdef HAVE_SYSTEMD
+	unsigned long nrequests = 0;
+	struct timeval tmout;
 
-	retx = select(maxfd + 1, &fdset, NULL, NULL, NULL);
-	if (retx < 0) {
-	    if (errno == EINTR)
-		continue;
-	    else
-		krb5_err(context, 1, errno, "select");
-	}
-	for (i = 0; i < n; ++i)
-	    if (FD_ISSET(sockets[i], &fdset)) {
-		u_char buf[BUFSIZ];
-		socklen_t addrlen = sizeof(__ss);
+	tmoutp = &tmout;
+	sd_notify(0, "READY=1");
+	sd_notifyf(0, "STATUS=Serving; %lu password change request(s) processed",
+		   nrequests);
+#endif
 
-		retx = recvfrom(sockets[i], buf, sizeof(buf), 0,
-				sa, &addrlen);
-		if (retx < 0) {
-		    if (errno == EINTR)
-			break;
-		    else
-			krb5_err(context, 1, errno, "recvfrom");
-		}
+	while (exit_flag == 0) {
+	    krb5_ssize_t retx;
+	    fd_set fdset = real_fdset;
 
-		process(keytab, sockets[i],
-			 &addrs.val[i],
-			 sa, addrlen,
-			 buf, retx);
+#ifdef HAVE_SYSTEMD
+	    tmout.tv_sec = STATUS_INTERVAL;
+	    tmout.tv_usec = 0;
+#endif
+	    retx = select(maxfd + 1, &fdset, NULL, NULL, tmoutp);
+	    if (retx < 0) {
+		if (errno == EINTR)
+		    continue;
+		else
+		    krb5_err(context, 1, errno, "select");
 	    }
+#ifdef HAVE_SYSTEMD
+	    if (retx == 0) {
+		/* select timed out: refresh our systemd status line */
+		sd_notifyf(0, "STATUS=Serving; %lu password change request(s) "
+			   "processed", nrequests);
+		continue;
+	    }
+#endif
+	    for (i = 0; i < n; ++i)
+		if (FD_ISSET(sockets[i], &fdset)) {
+		    u_char buf[BUFSIZ];
+		    socklen_t addrlen = sizeof(__ss);
+
+		    retx = recvfrom(sockets[i], buf, sizeof(buf), 0,
+				    sa, &addrlen);
+		    if (retx < 0) {
+			if (errno == EINTR)
+			    break;
+			else
+			    krb5_err(context, 1, errno, "recvfrom");
+		    }
+
+		    process(keytab, sockets[i],
+			     &addrs.val[i],
+			     sa, addrlen,
+			     buf, retx);
+#ifdef HAVE_SYSTEMD
+		    nrequests++;
+#endif
+		}
+	}
     }
+
+#ifdef HAVE_SYSTEMD
+    sd_notify(0, "STOPPING=1");
+#endif
 
     for (i = 0; i < n; ++i)
 	close(sockets[i]);
