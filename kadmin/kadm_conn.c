@@ -273,12 +273,37 @@ start_server(krb5_context contextp, const char *port_str)
     unsigned int num_socks = 0;
     int i;
 
-    if (port_str == NULL)
-	port_str = "+";
+#ifdef HAVE_SYSTEMD
+    {
+	char **names = NULL;
+	int sd_n, j;
 
-    parse_ports(contextp, port_str);
+	sd_n = sd_listen_fds_with_names(0, &names);
+	if (sd_n < 0)
+	    krb5_err(contextp, 1, -sd_n, "sd_listen_fds_with_names");
+	if (sd_n > 0) {
+	    socks = malloc(sd_n * sizeof(*socks));
+	    if (socks == NULL)
+		krb5_err(contextp, 1, errno, "malloc");
+	    for (j = 0; j < sd_n; j++) {
+		if (names != NULL && names[j] != NULL &&
+		    strncmp(names[j], "kadmind", 7) == 0)
+		    socks[num_socks++] = SD_LISTEN_FDS_START + j;
+	    }
+	}
+	for (j = 0; names != NULL && names[j] != NULL; j++)
+	    free(names[j]);
+	free(names);
+    }
+#endif /* HAVE_SYSTEMD */
 
-    for(p = kadm_ports; p; p = p->next) {
+    if (num_socks == 0) {
+	if (port_str == NULL)
+	    port_str = "+";
+
+	parse_ports(contextp, port_str);
+
+	for(p = kadm_ports; p; p = p->next) {
 	struct addrinfo hints, *ai, *ap;
 	char portstr[32];
 	memset (&hints, 0, sizeof(hints));
@@ -334,6 +359,7 @@ start_server(krb5_context contextp, const char *port_str)
 	    socks[num_socks++] = s;
 	}
 	freeaddrinfo (ai);
+	}
     }
     if(num_socks == 0)
 	krb5_errx(contextp, 1, "no sockets to listen to - exiting");
