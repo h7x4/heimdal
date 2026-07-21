@@ -35,6 +35,11 @@
 #ifdef HAVE_SYS_WAIT_H
 #include <sys/wait.h>
 #endif
+#ifdef HAVE_SYSTEMD
+#include <systemd/sd-daemon.h>
+/* how often (seconds) to refresh the sd_notify STATUS line while idle */
+#define STATUS_INTERVAL 30
+#endif
 
 extern int daemon_child;
 
@@ -203,22 +208,52 @@ wait_for_connection(krb5_context contextp,
     signal(SIGINT, terminate);
     signal(SIGCHLD, sigchld);
 
+    {
+    struct timeval *tmoutp = NULL;
+#ifdef HAVE_SYSTEMD
+    unsigned long nconns = 0;
+    struct timeval tmout;
+
+    tmoutp = &tmout;
+    sd_notify(0, "READY=1");
+    sd_notifyf(0, "STATUS=Serving; %lu connection(s) accepted", nconns);
+#endif
+
     while (term_flag == 0) {
 	read_set = orig_read_set;
-	e = select(max_fd + 1, &read_set, NULL, NULL, NULL);
+#ifdef HAVE_SYSTEMD
+	tmout.tv_sec = STATUS_INTERVAL;
+	tmout.tv_usec = 0;
+#endif
+	e = select(max_fd + 1, &read_set, NULL, NULL, tmoutp);
 	if(rk_IS_SOCKET_ERROR(e)) {
 	    if(rk_SOCK_ERRNO != EINTR)
 		krb5_warn(contextp, rk_SOCK_ERRNO, "select");
-	} else if(e == 0)
+	} else if(e == 0) {
+#ifdef HAVE_SYSTEMD
+	    /* select timed out: refresh our systemd status line */
+	    sd_notifyf(0, "STATUS=Serving; %lu connection(s) accepted", nconns);
+#else
 	    krb5_warnx(contextp, "select returned 0");
-	else {
+#endif
+	} else {
 	    for(i = 0; i < num_socks; i++) {
-		if(FD_ISSET(socks[i], &read_set))
+		if(FD_ISSET(socks[i], &read_set)) {
 		    if(spawn_child(contextp, socks, num_socks, i) == 0)
 			return;
+#ifdef HAVE_SYSTEMD
+		    nconns++;
+#endif
+		}
 	    }
 	}
     }
+    }
+
+#ifdef HAVE_SYSTEMD
+    sd_notify(0, "STOPPING=1");
+#endif
+
     signal(SIGCHLD, SIG_IGN);
 
     while ((waitpid(-1, &status, WNOHANG)) > 0)

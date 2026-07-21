@@ -72,7 +72,10 @@ kadmind_LDADD = $(top_builddir)/lib/kadm5/libkadm5srv.la \
 	../lib/gssapi/libgssapi.la \
 	$(LDADD_common) \
 	$(LIB_pidfile) \
-	$(LIB_dlopen)
+	$(LIB_dlopen) \
+	$(SYSTEMD_LIBS)
+
+kadmind_CFLAGS = $(SYSTEMD_CFLAGS)
 
 kadmin_LDADD = \
 	$(top_builddir)/lib/kadm5/libkadm5clnt.la \
